@@ -117,6 +117,7 @@ func ctoi_yjb(str []byte) (V, L int) {
 }
 
 // 汉字数字转换为阿拉伯数字，考虑有单位和无单位的两种情况
+// 返回两个整型值，第一个为解析到的数字，另一个为读取的rune数
 func CtoI(num string) (int, int) {
 	str := make([]byte, 1, 20)
 loop:
@@ -159,7 +160,7 @@ loop:
 	for _, e := range str[1:] {
 		if e < 48 {
 			if str[1] == 2 {
-				str[0] = 1
+				str[0] = '1'
 			} else {
 				str = str[1:]
 			}
@@ -212,8 +213,14 @@ func itoc_qyx(m byte, n int) []byte {
 	}
 	switch m {
 	case 0:
-		for i := 1; str[i] == '0'; i++ {
+		i := 1
+		for ; str[i] == '0'; i++ {
 			str[i] = 0
+		}
+		if i+1 < len(str) {
+			if str[i] == '1' && str[i+1] == 2 {
+				str[i] = 0
+			}
 		}
 	case 1:
 	case 2:
@@ -253,6 +260,7 @@ func itoc_yjb(n int) []byte {
 }
 
 // 阿拉伯数字转换为汉字数字，考虑普通“小写”和账簿“大写”的两种情况
+// 返回一个表示数字的汉语数字字符和该字符串的rune数
 func ItoC(n int, big bool) (string, int) {
 	if n < 0 || n >= 1e16 {
 		return "", 0
