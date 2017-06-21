@@ -1,6 +1,6 @@
 // 本包提供汉语数字字符串和整型数值的转换，只支持转换自然数
 // 可以与账簿“大写”和日常“小写”两个版本的汉语数字相互转换
-package ic
+package strconv
 
 /*
 0000 0001 个 1
@@ -117,7 +117,7 @@ func ctoi_yjb(str []byte) (V, L int) {
 }
 
 // 汉字数字转换为阿拉伯数字，考虑有单位和无单位的两种情况
-// 返回两个整型值，第一个为解析到的数字，另一个为读取的rune数
+// 返回两个整型值，第一个为解析到的数字，另一个为读取的rune数,rune数为0表示解析失败
 func CtoI(num string) (int, int) {
 	str := make([]byte, 1, 20)
 loop:
@@ -260,10 +260,10 @@ func itoc_yjb(n int) []byte {
 }
 
 // 阿拉伯数字转换为汉字数字，考虑普通“小写”和账簿“大写”的两种情况
-// 返回一个表示数字的汉语数字字符和该字符串的rune数
-func ItoC(n int, big bool) (string, int) {
+// 返回一个表示数字的汉语数字字符和可能的错误（超出表达范围）
+func ItoC(n int, big bool) (string, error) {
 	if n < 0 || n >= 1e16 {
-		return "", 0
+		return "", OutofRange
 	}
 	str := itoc_yjb(n)
 	num := make([]rune, 0, 40)
@@ -340,5 +340,5 @@ func ItoC(n int, big bool) (string, int) {
 			}
 		}
 	}
-	return string(num), len(num)
+	return string(num), nil
 }
