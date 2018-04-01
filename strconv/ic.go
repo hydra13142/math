@@ -10,7 +10,7 @@ var (
 	ErrEmpty  = errors.New("Empty string")
 	ErrSyntax = errors.New("Syntax error")
 	ErrRange  = errors.New("Out of range")
-	
+
 	cs = "零壹贰叁肆伍陆柒捌玖拾佰仟万亿"
 	cb = "零一二三四五六七八九十百千万亿"
 	is = []string{"零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "", "十", "百", "千", "万", "亿"}
@@ -154,10 +154,10 @@ func itoc1(n int64) []byte {
 		i--
 		c[i] = 0
 	}
-	for k := 0; k < 4; k++ {
-		c[k]|= byte(3-k)<<4
+	for k := i; k <= j; k++ {
+		c[k] |= byte(3-k) << 4
 	}
-	return c
+	return c[i:j+1]
 }
 
 // 万级别（1e4 ~ 1e8-1）的整数到汉字转换
@@ -190,7 +190,7 @@ func itoc3(n int64) []byte {
 func format(s []byte, list []string) []string {
 	t := make([]string, len(s))
 	for i, c := range s {
-		switch k:=c&15; k {
+		switch k := c & 15; k {
 		case 0, 10, 14, 15:
 			t[i] = list[k]
 		default:
@@ -228,7 +228,6 @@ func Itoc(n int64) (string, error) {
 	}
 	return strings.Join(t, ""), nil
 }
-
 
 // 返回一个大写汉字数字字符串表示的数字和可能的错误
 func Ctoi2(s string) (int64, error) {
