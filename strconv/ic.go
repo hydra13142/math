@@ -1,344 +1,260 @@
-// 本包提供汉语数字字符串和整型数值的转换，只支持转换自然数
-// 可以与账簿“大写”和日常“小写”两个版本的汉语数字相互转换
 package strconv
 
-/*
-0000 0001 个 1
-0000 0010 十 2
-0000 0100 百 4
-0000 1000 千 8
-0001 0000 万 16
-0010 0000 亿 32
-0011 0000 零 '0'
-0011 0001 一 '1'
-0011 0010 二 '2'
-0011 0011 三 '3'
-0011 0100 四 '4'
-0011 0101 五 '5'
-0011 0110 六 '6'
-0011 0111 七 '7'
-0011 1000 八 '8'
-0011 1001 九 '9'
-*/
+import (
+	"errors"
+	"strings"
+)
 
-// 进行千以下的汉字数字与阿拉伯数字的换算，会考虑是位于开头、顺序（亿万、万千）还是跳跃（亿千）的情况
-func ctoi_qyx(m byte, str []byte) (v, i int) {
-	var q, b, s, g, t, l int
-	if len(str) == 0 {
-		return 0, 0
-	}
-	switch m {
-	case 0:
-		t = 15
-	case 1:
-		t = 8
-	case 2:
-		t = 16
-	}
+var (
+	ErrRune   = errors.New("Unrecognised rune")
+	ErrEmpty  = errors.New("Empty string")
+	ErrSyntax = errors.New("Syntax error")
+	ErrRange  = errors.New("Out of range")
+	
+	cs = "零壹贰叁肆伍陆柒捌玖拾佰仟万亿"
+	cb = "零一二三四五六七八九十百千万亿"
+	is = []string{"零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "", "十", "百", "千", "万", "亿"}
+	ib = []string{"零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖", "", "拾", "佰", "仟", "万", "亿"}
+)
 
-	i, l = 0, len(str)
-	for t > 0 && i < l {
-		switch c := int(str[i]); {
-		case c == '0':
-			if t&1 != 0 {
-				return -1, i
+// 对汉字字符串进行一定的翻译，方便后续的处理，并对习惯用法进行修复
+func parse(s, list string) ([]byte, error) {
+	if s == "" {
+		return nil, ErrEmpty
+	}
+	t := make([]byte, 1, len(s)/3+1)
+outer:
+	for _, r := range s {
+		for j, c := range []rune(list) {
+			if r == c {
+				t = append(t, byte(j))
+				continue outer
 			}
-			i, t = i+1, t-1
-		case c >= 48:
-			i, g = i+1, c&15
-			if i < l {
-				if c = int(str[i]); c > 8 || c&t == 0 {
-					return -1, i
-				}
-				switch c {
-				case 8:
-					q, t = g, 4
-				case 4:
-					b, t = g, 2
-				case 2:
-					s, t = g, 1
-				}
-				i, g = i+1, 0
-			}
-		default:
-			return -1, i
 		}
+		return nil, ErrRune
 	}
-	if g == 0 || t&1 != 0 {
-		return q*1000 + b*100 + s*10 + g, i
+	if t[1] == 10 {
+		t[0] = 1
+	} else { // 对应汉字‘十’
+		t = t[1:]
 	}
-	return -1, i
+	return t, nil
 }
 
-// 进行千万以下的汉字数字与阿拉伯数字的换算，会考虑是位于开头还是顺序（亿万）的情况
-func ctoi_wjb(m byte, str []byte) (v, i int) {
-	i, l := 0, len(str)
-	for i < l && str[i] != 16 {
-		i++
-	}
-	if i < l {
-		h, a := ctoi_qyx(m, str[:i])
-		if h < 0 {
-			return h, a
-		}
-		i++
-		l, b := ctoi_qyx(1, str[i:])
-		if l < 0 {
-			return l, a + b + 1
-		}
-		return h*1e4 + l, a + b + 1
-	} else if m != 0 {
-		return ctoi_qyx(2, str)
-	} else {
-		return ctoi_qyx(0, str)
-	}
-}
-
-// 进行万亿以下的汉字数字与阿拉伯数字的换算，只考虑位于开头的情况
-func ctoi_yjb(str []byte) (V, L int) {
-	i, l := 0, len(str)
-	for i < l && str[i] != 32 {
-		i++
-	}
-	if i < l {
-		h, a := ctoi_wjb(0, str[:i])
-		if h < 0 {
-			return h, a
-		}
-		i++
-		l, b := ctoi_wjb(1, str[i:])
-		if l < 0 {
-			return l, a + b + 1
-		}
-		return h*1e8 + l, a + b + 1
-	} else {
-		return ctoi_wjb(0, str)
-	}
-}
-
-// 汉字数字转换为阿拉伯数字，考虑有单位和无单位的两种情况
-// 返回两个整型值，第一个为解析到的数字，另一个为读取的rune数,rune数为0表示解析失败
-func CtoI(num string) (int, int) {
-	str := make([]byte, 1, 20)
-loop:
-	for _, r := range num {
-		switch r {
-		case '〇', '零':
-			str = append(str, '0')
-		case '一', '壹':
-			str = append(str, '1')
-		case '二', '贰', '两':
-			str = append(str, '2')
-		case '三', '叁':
-			str = append(str, '3')
-		case '四', '肆':
-			str = append(str, '4')
-		case '五', '伍':
-			str = append(str, '5')
-		case '六', '陆':
-			str = append(str, '6')
-		case '七', '柒':
-			str = append(str, '7')
-		case '八', '捌':
-			str = append(str, '8')
-		case '九', '玖':
-			str = append(str, '9')
-		case '十', '拾':
-			str = append(str, 2)
-		case '百', '佰':
-			str = append(str, 4)
-		case '千', '仟':
-			str = append(str, 8)
-		case '万':
-			str = append(str, 16)
-		case '亿':
-			str = append(str, 32)
-		default:
-			break loop
-		}
-	}
-	for _, e := range str[1:] {
-		if e < 48 {
-			if str[1] == 2 {
-				str[0] = '1'
-			} else {
-				str = str[1:]
+// 万以下级别（0 ~ 9999）的汉字到整数转换，这是可重复的最小转换规则单位。
+func ctoi1(s []byte) int64 {
+	t, k, p, v := 0, 0, 4, false
+	for _, c := range s {
+		switch c {
+		case 10: //‘十’
+			if k == 0 || p < 2 {
+				return -1
 			}
-			if i := len(str) - 1; i > 0 {
-				if a := str[i]; a >= '1' && a <= '9' {
-					if b := str[i-1]; b != '0' && b != 2 {
-						str = append(str, str[i-1]>>1)
-					}
-				}
+			t, k, p, v = t+k*10, 0, 1, false
+		case 11: //‘百’
+			if k == 0 || p < 3 {
+				return -1
 			}
-			return ctoi_yjb(str)
+			t, k, p, v = t+k*100, 0, 2, false
+		case 12: //‘千’
+			if v || k == 0 || p < 4 {
+				return -1
+			}
+			t, k, p, v = t+k*1000, 0, 3, false
+		case 0: //‘零’
+			if v || k != 0 {
+				return -1
+			}
+			p, v = p-1, true
+		default: //‘一’—‘九’
+			if k != 0 {
+				return -1
+			}
+			k = int(c)
 		}
 	}
-	n := 0
-	for _, e := range str {
-		n = n*10 + int(e&15)
+	if k != 0 {
+		if v || p == 1 {
+			return int64(t + k)
+		}
+		return -1
 	}
-	return n, len(str)
+	return int64(t)
 }
 
-// 进行千以下的阿拉伯数字与汉字数字的换算，会考虑是位于开头、顺序（亿万、万千）还是跳跃（亿千）的情况，返回中间序列
-func itoc_qyx(m byte, n int) []byte {
+// 万级别（1e4 ~ 1e8-1）的汉字到整数转换
+func ctoi2(s []byte) int64 {
+	var h, l int64
+	t := 0
+	for i, c := range s {
+		if c == 13 {
+			if t != 0 || i == 0 {
+				return -1
+			}
+			t = i
+		}
+	}
+	if t == 0 {
+		return ctoi1(s)
+	}
+	if h = ctoi1(s[:t]); h < 0 {
+		return -1
+	}
+	if l = ctoi1(s[t+1:]); l < 0 {
+		return -1
+	}
+	return h*1e4 + l
+}
+
+// 亿级别（1e8 ~ 1e16-1）的汉字到整数转换
+func ctoi3(s []byte) int64 {
+	var h, l int64
+	t := 0
+	for i, c := range s {
+		if c == 14 {
+			if t != 0 || i == 0 {
+				return -1
+			}
+			t = i
+		}
+	}
+	if t == 0 {
+		return ctoi2(s)
+	}
+	if h = ctoi2(s[:t]); h < 0 {
+		return -1
+	}
+	if l = ctoi2(s[t+1:]); l < 0 {
+		return -1
+	}
+	return h*1e8 + l
+}
+
+// 万以下级别（0 ~ 9999）的整数到汉字转换
+func itoc1(n int64) []byte {
+	var i, j int
 	if n == 0 {
-		return []byte{'0'}
+		return []byte{0}
 	}
-	str := make([]byte, 1, 20)
-	ws := make([]byte, 4)
-	for i := 0; i < 4; i++ {
-		ws[i] = byte(n % 10)
+	c := make([]byte, 4)
+	for i = 0; i < 4; i++ {
+		c[3-i] = byte(n % 10)
 		n /= 10
 	}
-	for i := 3; i >= 0; i-- {
-		if ws[i] == 0 {
-			str = append(str, '0')
-		} else {
-			str = append(str, ws[i]+'0', 1<<byte(i))
-		}
+	for j = 3; j > 0 && c[j] == 0; j-- {
+		c[j] = 10
 	}
-	l := len(str)
-	for i := l - 1; i >= 0 && str[i] == '0'; i-- {
-		str[i] = 0
+	for i = 0; i < j && c[i] == 0; i++ {
+		c[i] = 10
 	}
-	a := str[0]
-	for i := 1; i < l; i++ {
-		b := str[i]
-		if b == '0' && a == '0' {
-			str[i] = 0
-		}
-		a = b
+	if j == 3 && i == 0 && c[1] == 0 && c[2] == 0 {
+		c[2] = 10
 	}
-	switch m {
-	case 0:
-		i := 1
-		for ; str[i] == '0'; i++ {
-			str[i] = 0
-		}
-		if i+1 < len(str) {
-			if str[i] == '1' && str[i+1] == 2 {
-				str[i] = 0
-			}
-		}
-	case 1:
-	case 2:
-		if str[1] != '0' {
-			str[0] = '0'
-		}
+	if i != 0 {
+		i--
+		c[i] = 0
 	}
-	return str
+	for k := 0; k < 4; k++ {
+		c[k]|= byte(3-k)<<4
+	}
+	return c
 }
 
-// 进行千万以下的阿拉伯数字与汉字数字的换算，会考虑是位于开头还是顺序（亿万）的情况，返回中间序列
-func itoc_wjb(m byte, n int) []byte {
+// 万级别（1e4 ~ 1e8-1）的整数到汉字转换
+func itoc2(n int64) []byte {
 	h, l := n/1e4, n%1e4
-	if m == 0 {
-		if h == 0 {
-			return itoc_qyx(0, l)
-		} else {
-			return append(append(itoc_qyx(0, h), 16), itoc_qyx(1, l)...)
-		}
-	} else {
-		if h == 0 {
-			return itoc_qyx(2, l)
-		} else {
-			return append(append(itoc_qyx(1, h), 16), itoc_qyx(1, l)...)
-		}
+	if h == 0 {
+		return itoc1(l)
 	}
+	H := append(itoc1(h), 14)
+	if l == 0 {
+		return H
+	}
+	return append(H, itoc1(l)...)
 }
 
-// 进行万亿以下的阿拉伯数字与汉字数字的换算，只考虑位于开头的情况，返回中间序列
-func itoc_yjb(n int) []byte {
+// 亿级别（1e8 ~ 1e16-1）的整数到汉字转换
+func itoc3(n int64) []byte {
 	h, l := n/1e8, n%1e8
 	if h == 0 {
-		return itoc_wjb(0, l)
+		return itoc2(l)
+	}
+	H := append(itoc2(h), 15)
+	if l == 0 {
+		return H
+	}
+	return append(H, itoc2(l)...)
+}
+
+// 将修正过的标记串翻译成汉字数字+单位的数组
+func format(s []byte, list []string) []string {
+	t := make([]string, len(s))
+	for i, c := range s {
+		switch k:=c&15; k {
+		case 0, 10, 14, 15:
+			t[i] = list[k]
+		default:
+			t[i] = list[k] + list[(c>>4)+10]
+		}
+	}
+	return t
+}
+
+// 返回一个小写汉字数字字符串表示的数字和可能的错误
+func Ctoi(s string) (int64, error) {
+	if t, e := parse(s, cs); e != nil {
+		return 0, e
+	} else if len(t) > 1 && t[0] == 0 {
+		return 0, ErrSyntax
+	} else if x := ctoi3(t); x < 0 {
+		return 0, ErrSyntax
 	} else {
-		return append(append(itoc_wjb(0, h), 32), itoc_wjb(1, l)...)
+		return x, nil
 	}
 }
 
-// 阿拉伯数字转换为汉字数字，考虑普通“小写”和账簿“大写”的两种情况
-// 返回一个表示数字的汉语数字字符和可能的错误（超出表达范围）
-func ItoC(n int, big bool) (string, error) {
+// 返回一个数字的小写汉字数字字符串表示和可能的错误
+func Itoc(n int64) (string, error) {
 	if n < 0 || n >= 1e16 {
-		return "", OutofRange
+		return "", ErrRange
 	}
-	str := itoc_yjb(n)
-	num := make([]rune, 0, 40)
-	if big {
-		for _, c := range str {
-			switch c {
-			case 0:
-			case 2:
-				num = append(num, '拾')
-			case 4:
-				num = append(num, '佰')
-			case 8:
-				num = append(num, '仟')
-			case 16:
-				num = append(num, '万')
-			case 32:
-				num = append(num, '亿')
-			case '0':
-				num = append(num, '零')
-			case '1':
-				num = append(num, '壹')
-			case '2':
-				num = append(num, '贰')
-			case '3':
-				num = append(num, '叁')
-			case '4':
-				num = append(num, '肆')
-			case '5':
-				num = append(num, '伍')
-			case '6':
-				num = append(num, '陆')
-			case '7':
-				num = append(num, '柒')
-			case '8':
-				num = append(num, '捌')
-			case '9':
-				num = append(num, '玖')
-			}
-		}
+	s := itoc3(n)
+	if len(s) > 1 && s[0]&15 == 0 {
+		s = s[1:]
+	}
+	t := format(s, is)
+	if s[0] == 17 {
+		t[0] = is[11]
+	}
+	return strings.Join(t, ""), nil
+}
+
+
+// 返回一个大写汉字数字字符串表示的数字和可能的错误
+func Ctoi2(s string) (int64, error) {
+	if t, e := parse(s, cb); e != nil {
+		return 0, e
+	} else if len(t) > 1 && t[0] == 0 {
+		return 0, ErrSyntax
+	} else if x := ctoi3(t); x < 0 {
+		return 0, ErrSyntax
 	} else {
-		for _, c := range str {
-			switch c {
-			case 0:
-			case 2:
-				num = append(num, '十')
-			case 4:
-				num = append(num, '百')
-			case 8:
-				num = append(num, '千')
-			case 16:
-				num = append(num, '万')
-			case 32:
-				num = append(num, '亿')
-			case '0':
-				num = append(num, '零')
-			case '1':
-				num = append(num, '一')
-			case '2':
-				num = append(num, '二')
-			case '3':
-				num = append(num, '三')
-			case '4':
-				num = append(num, '四')
-			case '5':
-				num = append(num, '五')
-			case '6':
-				num = append(num, '六')
-			case '7':
-				num = append(num, '七')
-			case '8':
-				num = append(num, '八')
-			case '9':
-				num = append(num, '九')
-			}
-		}
+		return x, nil
 	}
-	return string(num), nil
+}
+
+// 返回一个数字的大写汉字数字字符串表示和可能的错误
+func Itoc2(n int64) (string, error) {
+	if n < 0 || n >= 1e16 {
+		return "", ErrRange
+	}
+	s := itoc3(n)
+	if len(s) > 1 && s[0]&15 == 0 {
+		s = s[1:]
+	}
+	t := format(s, ib)
+	if s[0] == 17 {
+		t[0] = is[11]
+	}
+	return strings.Join(t, ""), nil
 }
