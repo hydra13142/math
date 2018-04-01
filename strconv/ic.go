@@ -254,7 +254,7 @@ func Itoc2(n int64) (string, error) {
 	}
 	t := format(s, ib)
 	if s[0] == 17 {
-		t[0] = is[11]
+		t[0] = ib[11]
 	}
 	return strings.Join(t, ""), nil
 }
